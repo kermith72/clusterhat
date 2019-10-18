@@ -11,3 +11,6 @@ hostgroup_centreon: 'LaboCluster'
 template_raspberry: 'htpl_cluster_pi'
 template_docker: 'htpl_docker'
 poller_centreon: 'poller1'
+ip_monitoring:
+  - 192.168.x.xx1
+  - 192.168.x.xx2
