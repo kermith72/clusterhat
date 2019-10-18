@@ -1,0 +1,79 @@
+- name: ajout du hostname dans /etc/hosts
+  lineinfile:
+    dest: /etc/hosts
+    regexp: "^{{ ansible_default_ipv4.address }}.+$"
+    line: "{{ ansible_default_ipv4.address }} {{ ansible_hostname }}"
+
+- name: select locales to be generated
+  locale_gen:
+    name: "{{ item }}"
+    state: present
+  loop: "{{ locales_generated }}"
+  notify: reconfigure locales
+
+- name: set default locale
+  lineinfile:
+    dest: "/etc/default/locale"
+    regexp: "^LANG="
+    line: "LANG={{ locales_default }}"
+  notify: reconfigure locales
+
+- name: set /etc/localtime
+  file: src=/usr/share/zoneinfo/{{ timezone }} dest=/etc/localtime state=link
+
+- name: set /etc/timezone
+  template:
+    src: timezone.j2
+    dest: /etc/timezone
+  notify: reconfigure locales
+
+- name: Désactivation IPV6 au prochain reboot
+  template:
+    src: disableipv6.conf.j2
+    dest: /etc/sysctl.d/disableipv6.conf
+    owner: root
+    group: root
+    mode: 0755
+
+- name: désactiver ipv6 pour toutes les interfaces réseaux
+  shell: sysctl -w net.ipv6.conf.all.disable_ipv6=1
+  args:
+    warn: no
+
+- name: désactive l’auto configuration pour toutes les interfaces
+  shell: sysctl -w net.ipv6.conf.all.autoconf=0
+  args:
+    warn: no
+
+- name: désactive ipv6 de la configuration par défaut
+  shell: sysctl -w net.ipv6.conf.default.disable_ipv6=1
+  args:
+    warn: no
+
+- name: désactive l’auto configuration par défaut
+  shell: sysctl -w net.ipv6.conf.default.autoconf=0
+  args:
+    warn: no
+
+- name: ajout des cgroups dans /boot/cmdline.txt
+  template:
+    src: cmdline.txt.j2
+    dest: /boot/cmdline.txt
+    owner: root
+    group: root
+    mode: 0755
+
+- name: désactivation du swap
+  shell: dphys-swapfile swapoff && dphys-swapfile uninstall && update-rc.d dphys-swapfile remove
+  ignore_errors: True
+
+# pas suffisant quant la machine redémarre le swap est actif
+#- name: swapoff
+#  shell: swapoff -a
+- name: suppression paquet dphys-swapfile
+  apt:
+    name:
+      - dphys-swapfile
+    purge: yes
+    autoremove: yes
+    state: absent

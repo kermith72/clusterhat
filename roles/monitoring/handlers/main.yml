@@ -1,0 +1,7 @@
+---
+# handlers file for common
+- name: restart snmp
+  become: true
+  service:
+    name: snmpd
+    state: restarted

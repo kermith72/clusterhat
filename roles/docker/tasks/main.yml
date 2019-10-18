@@ -1,0 +1,196 @@
+- name: installation de apt-transport-https
+  apt:
+    name: apt-transport-https
+    state: present
+
+- name: repository docker Buster
+  apt_repository:
+    repo: deb [arch=armhf] https://download.docker.com/linux/raspbian buster stable
+    update_cache: no
+    state: present
+  when: ansible_distribution == 'Debian' and ansible_distribution_major_version == '10'
+
+- name: repository docker Stretch
+  apt_repository:
+    repo: deb [arch=armhf] https://download.docker.com/linux/raspbian stretch stable
+    update_cache: no
+    state: present
+  when: ansible_distribution == 'Debian' and ansible_distribution_major_version == '9'
+
+
+- name: ajout dépôt kub - key buster
+  shell: curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -qq -
+  args:
+    warn: no
+  when: ansible_distribution == 'Debian' and ansible_distribution_major_version == '10'
+
+- name: ajout dépôt kub - key Stretch
+  shell: curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
+  args:
+    warn: no
+  when: ansible_distribution == 'Debian' and ansible_distribution_major_version == '9'
+
+- name: apt-get update
+  apt:
+    update_cache: yes
+
+- name: vérification si docker existe
+  stat:
+    path: /usr/bin/docker
+  register: docker_exist
+  ignore_errors: True
+
+- name: Add group dockeremap
+  group:
+    name: dockeremap
+    gid: 500000
+    state: present
+
+- name: Add group dockeremap-user
+  group:
+    name: dockeremap-user
+    gid: 501000
+    state: present
+
+- name: Add dockeremap
+  user:
+    name: dockeremap
+    shell: /bin/false
+    uid: 500000
+    group: dockeremap
+
+- name: Add dockeremap-user
+  user:
+    name: dockeremap-user
+    shell: /bin/false
+    uid: 501000
+    group: dockeremap-user
+
+- name: Test dockeremap in /etc/subuid
+  shell: grep dockeremap /etc/subuid
+  ignore_errors: true
+  register: exist_subuid
+
+- name: Modification /etc/subuid
+  lineinfile:
+    dest=/etc/subuid
+    regexp=''
+    insertafter=EOF
+    line="dockeremap:500000:65536"
+    state=present
+  when: exist_subuid is failed
+
+- name: Test dockeremap in /etc/subgid
+  shell: grep dockeremap /etc/subgid
+  ignore_errors: true
+  register: exist_subgid
+
+- name: Modification /etc/subgid
+  lineinfile:
+    dest=/etc/subgid
+    regexp=''
+    insertafter=EOF
+    line="dockeremap:500000:65536"
+    state=present
+  when: exist_subgid is failed
+
+- name: vérification si docker existe
+  stat:
+    path: /usr/bin/docker
+  register: docker_exist
+  ignore_errors: True
+
+- name: installation de docker sur pi3
+  apt:
+    name: docker-ce
+    state: present
+  ignore_errors: true
+  when: docker_exist.stat.exists == False and ansible_machine == 'armv7l'
+
+- name: purge aufs-dkms buster
+  apt:
+    name: aufs-dkms
+    state: absent
+    purge: yes
+  ignore_errors: true
+  when: docker_exist.stat.exists == False and ansible_distribution == 'Debian' and ansible_distribution_major_version == '10'
+
+
+- name: Téléchargement paquet docker Buster for  pi zero
+  get_url:
+    url: "{{ item }}"
+    dest: /tmp/containerd.io_1.2.6-1_armhf.deb
+  with_items:
+    - "https://packagecloud.io/Hypriot/rpi/packages/raspbian/stretch/containerd.io_1.2.6-1_armhf.deb/download.deb"
+  when: docker_exist.stat.exists == False and ansible_distribution == 'Debian' and ansible_distribution_major_version == '10' and ansible_machine == 'armv6l'
+
+- name: install .deb using dpkg Buster for  pi zero
+  apt:
+    deb: "{{ item }}"
+    state: present
+  with_items:
+    - /tmp/containerd.io_1.2.6-1_armhf.deb
+  when: docker_exist.stat.exists == False and ansible_distribution == 'Debian' and ansible_distribution_major_version == '10' and ansible_machine == 'armv6l'
+
+- name: installation de docker Buster sur pi Zero
+  apt:
+    name: docker-ce
+    state: present
+  ignore_errors: true
+  when: docker_exist.stat.exists == False and ansible_distribution == 'Debian' and ansible_distribution_major_version == '10' and ansible_machine == 'armv6l'
+
+- name: installation de docker Stretch sur Pi Zero
+  apt:
+    name: docker-ce=18.06.1~ce~3-0~raspbian
+    state: present
+  ignore_errors: true
+  when: docker_exist.stat.exists == False and ansible_distribution == 'Debian' and ansible_distribution_major_version == '9' and ansible_machine == 'armv6l'
+
+- name: accept connection PI Zero
+  iptables:
+    chain: FORWARD
+    jump: ACCEPT
+  register: changeiptable
+  when: ansible_machine == 'armv7l'
+
+- name: save iptables
+  shell: iptables-save > /etc/iptables/rules.v4
+  args:
+    warn: no
+  when: changeiptable.changed
+
+- name: ansible add pi to group docker
+  user:
+    name: pi
+    groups: docker
+
+- name: changement de conf pour les bridges
+  sysctl:
+    name: net.bridge.bridge-nf-call-iptables
+    value: 1
+    state: present
+
+- name: configuration cgroupdriver
+  template:
+    src: daemon.json.j2
+    dest: /etc/docker/daemon.json
+    owner: root
+    group: root
+    mode: 0644
+  register: confcgroup
+
+- name: Création dossier /etc/systemd/system/docker.service.d
+  file:
+    path: /etc/systemd/system/docker.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: 0775
+  register: foldersystemd
+
+- name: redémarrage docker
+  systemd:
+    state: restarted
+    daemon_reload: yes
+    name: docker
+  when: confcgroup.changed or foldersystemd.changed

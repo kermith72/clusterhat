@@ -1,0 +1,94 @@
+- name: installation de l'agent snmp
+  apt:
+    name:
+    - "snmp"
+    - "snmpd"
+    state: present
+
+- name: configuration snmpd
+  template:
+    src: snmpd.conf.j2
+    dest: /etc/snmp/snmpd.conf
+    owner: root
+    group: root
+    mode: 0600
+
+- name: modification du niveau de verbosité
+  template:
+    src: snmpd.service.j2
+    dest: /lib/systemd/system/snmpd.service
+    owner: root
+    group: root
+    mode: 0644
+
+- name: restart snmp
+  service:
+    name: snmpd
+    daemon_reload: yes
+    state: restarted
+
+- name: ajout script vérification température
+  template:
+    src: check_temp_cpu.sh.j2
+    dest: /home/pi/check_temp_cpu.sh
+    owner: pi
+    group: pi
+    mode: 0755
+
+- name: Modification Docker pour plugin Centreon
+  template:
+    src: docker.service.j2
+    dest: /lib/systemd/system/docker.service
+    owner: root
+    group: root
+    mode: 0644
+  register: foldersystemd
+  when: "srv_master ==  hostvars[inventory_hostname]['ansible_host']  "
+
+- name: redémarrage docker
+  systemd:
+    state: restarted
+    daemon_reload: yes
+    name: docker
+  when: foldersystemd.changed
+
+#- name: debug
+#  debug:
+#    var: ansible_hostname
+- name: accept connection monitoring
+  iptables:
+    chain: INPUT
+    in_interface: br0
+    protocol: tcp
+    destination_port: 2375
+    source: 192.168.1.250
+    jump: ACCEPT
+  register: changeiptable
+  when: "srv_master ==  hostvars[inventory_hostname]['ansible_host']  "
+
+- name: accept connection monitoring
+  iptables:
+    chain: INPUT
+    in_interface: br0
+    protocol: tcp
+    destination_port: 2375
+    jump: DROP
+  register: changeiptable
+  when: "srv_master ==  hostvars[inventory_hostname]['ansible_host']  "
+
+- name: save iptables
+  shell: iptables-save > /etc/iptables/rules.v4
+  args:
+    warn: no
+  when: changeiptable.changed
+
+- name: add host Centreon
+  command: ./createhost_api.sh -u="{{ user_centreon }}" -p="{{ passwd_centreon }}" -r=http://"{{ srv_monitoring }}" -H="{{ ansible_hostname }}" -I="{{ hostvars[inventory_hostname]['ansible_host'] }}" -A="{{ alias_centreon }}" -C="{{ snmp_community }}" -T="{{ template_raspberry }}" -V=2c -P="{{ poller_centreon }}" -G="{{ hostgroup_centreon }}"
+  become_user: "{{ user_local }}"
+  delegate_to: localhost
+
+- name: add template docker
+  command: ./addtemplate_api.sh -u="{{ user_centreon }}" -p="{{ passwd_centreon }}" -r=http://"{{ srv_monitoring }}" -H="{{ ansible_hostname }}" -T="{{ template_docker }}"
+  become_user: "{{ user_local }}"
+  delegate_to: localhost
+  when: "srv_master ==  hostvars[inventory_hostname]['ansible_host']  "

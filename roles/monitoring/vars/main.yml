@@ -1,0 +1,13 @@
+---
+# vars file for common
+snmp_community: 'public'
+srv_monitoring: '192.168.x.xxx'
+srv_master: '192.168.x.xxx'
+user_local: 'user'
+user_centreon: 'admin'
+passwd_centreon: 'mon_password'
+alias_centreon: 'clusterhat raspberry'
+hostgroup_centreon: 'LaboCluster'
+template_raspberry: 'htpl_cluster_pi'
+template_docker: 'htpl_docker'
+poller_centreon: 'poller1'

@@ -1,0 +1,18 @@
+- name: determine swarm status
+  shell: >
+    docker info 2>/dev/null | egrep 'Swarm: ' | cut -d ':' -f2
+  register: swarm_result
+  changed_when: False
+
+- name: create swarn init
+  shell: >
+    docker swarm init
+    --advertise-addr "{{ hostvars[inventory_hostname]['ansible_host'] }}"
+  when: "' inactive' in swarm_result.stdout_lines"
+  ignore_errors: True
+  register: addleader
+
+- name: retrieve token
+  shell: docker swarm join-token -q manager
+  register: swdocker
+  changed_when: False

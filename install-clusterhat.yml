@@ -1,0 +1,12 @@
+- hosts: clusterhat
+  roles:
+    - common
+    - docker
+    - monitoring
+    - clustermaster
+- hosts: nodes
+  roles:
+    - common
+    - docker
+    - monitoring
+    - clusternodes
